@@ -25,6 +25,7 @@ def _extract_tensors(dset, num=None, x_dtype=torch.float32):
     """
     x = torch.tensor(dset.data, dtype=x_dtype).permute(0, 3, 1, 2).div_(255)
     y = torch.tensor(dset.targets, dtype=torch.int64)
+
     if num is not None:
         if num <= 0 or num > x.shape[0]:
             raise ValueError(
