@@ -2,6 +2,7 @@
 Implements convolutional networks in PyTorch.
 WARNING: you SHOULD NOT use ".to()" or ".cuda()" in each implementation block.
 """
+
 import torch
 from a3_helper import softmax_loss
 from fully_connected_networks import Linear_ReLU, Linear, Solver, adam, ReLU
@@ -12,19 +13,14 @@ def hello_convolutional_networks():
     This is a sample function that we will try to import and run to ensure that
     our environment is correctly set up on Google Colab.
     """
-    print('Hello from convolutional_networks.py!')
+    print("Hello from convolutional_networks.py!")
 
 
 class Conv(object):
-
     @staticmethod
     def forward(x, w, b, conv_param):
         """
         A naive implementation of the forward pass for a convolutional layer.
-        The input consists of N data points, each with C channels, height H and
-        width W. We convolve each input with F different filters, where each
-        filter spans all C channels and has height HH and width WW.
-
         Input:
         - x: Input data of shape (N, C, H, W)
         - w: Filter weights of shape (F, C, HH, WW)
@@ -44,18 +40,44 @@ class Conv(object):
           W' = 1 + (W + 2 * pad - WW) / stride
         - cache: (x, w, b, conv_param)
         """
-        out = None
-        ####################################################################
-        # TODO: Implement the convolutional forward pass.                  #
-        # Hint: you can use function torch.nn.functional.pad for padding.  #
-        # You are NOT allowed to use anything in torch.nn in other places. #
-        ####################################################################
-        # Replace "pass" statement with your code
-        pass
-        #####################################################################
-        #                          END OF YOUR CODE                         #
-        #####################################################################
+        pad = conv_param["pad"]
+        stride = conv_param["stride"]
+
+        n = x.shape[0]
+        height = x.shape[2]
+        width = x.shape[3]
+
+        filters = w.shape[0]
+        filter_height = w.shape[2]
+        filter_width = w.shape[3]
+
+        h_prime = 1 + (height + 2 * pad - filter_height) // stride
+        w_prime = 1 + (width + 2 * pad - filter_width) // stride
+
+        out = torch.zeros(n, filters, h_prime, w_prime)
+
+        x_padded = torch.nn.functional.pad(
+            x, (pad, pad, pad, pad), mode="constant", value=0
+        )
+
+        for i in range(h_prime):
+            for j in range(w_prime):
+                patch = x_padded[
+                    :,
+                    :,
+                    i * stride : i * stride + filter_height,
+                    j * stride : j * stride + filter_width,
+                ]
+
+                patch_reshaped = patch.reshape(n, -1)
+                filter_reshaped = w.reshape(filters, -1)
+
+                out[:, :, i, j] = torch.matmul(patch_reshaped, filter_reshaped.t())
+
+        out = out + b.view(1, -1, 1, 1)
+
         cache = (x, w, b, conv_param)
+
         return out, cache
 
     @staticmethod
@@ -84,7 +106,6 @@ class Conv(object):
 
 
 class MaxPool(object):
-
     @staticmethod
     def forward(x, pool_param):
         """
@@ -147,16 +168,18 @@ class ThreeLayerConvNet(object):
     channels.
     """
 
-    def __init__(self,
-                 input_dims=(3, 32, 32),
-                 num_filters=32,
-                 filter_size=7,
-                 hidden_dim=100,
-                 num_classes=10,
-                 weight_scale=1e-3,
-                 reg=0.0,
-                 dtype=torch.float,
-                 device='cpu'):
+    def __init__(
+        self,
+        input_dims=(3, 32, 32),
+        num_filters=32,
+        filter_size=7,
+        hidden_dim=100,
+        num_classes=10,
+        weight_scale=1e-3,
+        reg=0.0,
+        dtype=torch.float,
+        device="cpu",
+    ):
         """
         Initialize a new network.
         Inputs:
@@ -201,18 +224,18 @@ class ThreeLayerConvNet(object):
 
     def save(self, path):
         checkpoint = {
-          'reg': self.reg,
-          'dtype': self.dtype,
-          'params': self.params,
+            "reg": self.reg,
+            "dtype": self.dtype,
+            "params": self.params,
         }
         torch.save(checkpoint, path)
         print("Saved in {}".format(path))
 
     def load(self, path):
-        checkpoint = torch.load(path, map_location='cpu')
-        self.params = checkpoint['params']
-        self.dtype = checkpoint['dtype']
-        self.reg = checkpoint['reg']
+        checkpoint = torch.load(path, map_location="cpu")
+        self.params = checkpoint["params"]
+        self.dtype = checkpoint["dtype"]
+        self.reg = checkpoint["reg"]
         print("load checkpoint file: {}".format(path))
 
     def loss(self, X, y=None):
@@ -221,17 +244,17 @@ class ThreeLayerConvNet(object):
         Input / output: Same API as TwoLayerNet.
         """
         X = X.to(self.dtype)
-        W1, b1 = self.params['W1'], self.params['b1']
-        W2, b2 = self.params['W2'], self.params['b2']
-        W3, b3 = self.params['W3'], self.params['b3']
+        W1, b1 = self.params["W1"], self.params["b1"]
+        W2, b2 = self.params["W2"], self.params["b2"]
+        W3, b3 = self.params["W3"], self.params["b3"]
 
         # pass conv_param to the forward pass for the convolutional layer
         # Padding and stride chosen to preserve the input spatial size
         filter_size = W1.shape[2]
-        conv_param = {'stride': 1, 'pad': (filter_size - 1) // 2}
+        conv_param = {"stride": 1, "pad": (filter_size - 1) // 2}
 
         # pass pool_param to the forward pass for the max-pooling layer
-        pool_param = {'pool_height': 2, 'pool_width': 2, 'stride': 2}
+        pool_param = {"pool_height": 2, "pool_width": 2, "stride": 2}
 
         scores = None
         ######################################################################
@@ -293,17 +316,20 @@ class DeepConvNet(object):
     consisting of N images, each with height H and width W and with C input
     channels.
     """
-    def __init__(self,
-                 input_dims=(3, 32, 32),
-                 num_filters=[8, 8, 8, 8, 8],
-                 max_pools=[0, 1, 2, 3, 4],
-                 batchnorm=False,
-                 num_classes=10,
-                 weight_scale=1e-3,
-                 reg=0.0,
-                 weight_initializer=None,
-                 dtype=torch.float,
-                 device='cpu'):
+
+    def __init__(
+        self,
+        input_dims=(3, 32, 32),
+        num_filters=[8, 8, 8, 8, 8],
+        max_pools=[0, 1, 2, 3, 4],
+        batchnorm=False,
+        num_classes=10,
+        weight_scale=1e-3,
+        reg=0.0,
+        weight_initializer=None,
+        dtype=torch.float,
+        device="cpu",
+    ):
         """
         Initialize a new network.
 
@@ -328,14 +354,14 @@ class DeepConvNet(object):
         - device: device to use for computation. 'cpu' or 'cuda'
         """
         self.params = {}
-        self.num_layers = len(num_filters)+1
+        self.num_layers = len(num_filters) + 1
         self.max_pools = max_pools
         self.batchnorm = batchnorm
         self.reg = reg
         self.dtype = dtype
 
-        if device == 'cuda':
-            device = 'cuda:0'
+        if device == "cuda":
+            device = "cuda:0"
 
         #####################################################################
         # TODO: Initialize the parameters for the DeepConvNet. All weights, #
@@ -361,8 +387,7 @@ class DeepConvNet(object):
         # pass of the second batch normalization layer, etc.
         self.bn_params = []
         if self.batchnorm:
-            self.bn_params = [{'mode': 'train'}
-                              for _ in range(len(num_filters))]
+            self.bn_params = [{"mode": "train"} for _ in range(len(num_filters))]
 
         # Check that we got the right number of parameters
         if not self.batchnorm:
@@ -370,51 +395,46 @@ class DeepConvNet(object):
         else:
             params_per_macro_layer = 4  # weight, bias, scale, shift
         num_params = params_per_macro_layer * len(num_filters) + 2
-        msg = 'self.params has the wrong number of ' \
-              'elements. Got %d; expected %d'
+        msg = "self.params has the wrong number of elements. Got %d; expected %d"
         msg = msg % (len(self.params), num_params)
         assert len(self.params) == num_params, msg
 
         # Check that all parameters have the correct device and dtype:
         for k, param in self.params.items():
-            msg = 'param "%s" has device %r; should be %r' \
-                  % (k, param.device, device)
+            msg = 'param "%s" has device %r; should be %r' % (k, param.device, device)
             assert param.device == torch.device(device), msg
-            msg = 'param "%s" has dtype %r; should be %r' \
-                  % (k, param.dtype, dtype)
+            msg = 'param "%s" has dtype %r; should be %r' % (k, param.dtype, dtype)
             assert param.dtype == dtype, msg
 
     def save(self, path):
         checkpoint = {
-          'reg': self.reg,
-          'dtype': self.dtype,
-          'params': self.params,
-          'num_layers': self.num_layers,
-          'max_pools': self.max_pools,
-          'batchnorm': self.batchnorm,
-          'bn_params': self.bn_params,
+            "reg": self.reg,
+            "dtype": self.dtype,
+            "params": self.params,
+            "num_layers": self.num_layers,
+            "max_pools": self.max_pools,
+            "batchnorm": self.batchnorm,
+            "bn_params": self.bn_params,
         }
         torch.save(checkpoint, path)
         print("Saved in {}".format(path))
 
     def load(self, path, dtype, device):
-        checkpoint = torch.load(path, map_location='cpu')
-        self.params = checkpoint['params']
+        checkpoint = torch.load(path, map_location="cpu")
+        self.params = checkpoint["params"]
         self.dtype = dtype
-        self.reg = checkpoint['reg']
-        self.num_layers = checkpoint['num_layers']
-        self.max_pools = checkpoint['max_pools']
-        self.batchnorm = checkpoint['batchnorm']
-        self.bn_params = checkpoint['bn_params']
+        self.reg = checkpoint["reg"]
+        self.num_layers = checkpoint["num_layers"]
+        self.max_pools = checkpoint["max_pools"]
+        self.batchnorm = checkpoint["batchnorm"]
+        self.bn_params = checkpoint["bn_params"]
 
         for p in self.params:
-            self.params[p] = \
-                self.params[p].type(dtype).to(device)
+            self.params[p] = self.params[p].type(dtype).to(device)
 
         for i in range(len(self.bn_params)):
             for p in ["running_mean", "running_var"]:
-                self.bn_params[i][p] = \
-                    self.bn_params[i][p].type(dtype).to(device)
+                self.bn_params[i][p] = self.bn_params[i][p].type(dtype).to(device)
 
         print("load checkpoint file: {}".format(path))
 
@@ -425,13 +445,13 @@ class DeepConvNet(object):
         Input / output: Same API as ThreeLayerConvNet.
         """
         X = X.to(self.dtype)
-        mode = 'test' if y is None else 'train'
+        mode = "test" if y is None else "train"
 
         # Set train/test mode for batchnorm params since they
         # behave differently during training and testing.
         if self.batchnorm:
             for bn_param in self.bn_params:
-                bn_param['mode'] = mode
+                bn_param["mode"] = mode
         scores = None
 
         # pass conv_param to the forward pass for the
@@ -439,10 +459,10 @@ class DeepConvNet(object):
         # Padding and stride chosen to preserve the input
         # spatial size
         filter_size = 3
-        conv_param = {'stride': 1, 'pad': (filter_size - 1) // 2}
+        conv_param = {"stride": 1, "pad": (filter_size - 1) // 2}
 
         # pass pool_param to the forward pass for the max-pooling layer
-        pool_param = {'pool_height': 2, 'pool_width': 2, 'stride': 2}
+        pool_param = {"pool_height": 2, "pool_width": 2, "stride": 2}
 
         scores = None
         #########################################################
@@ -485,7 +505,7 @@ class DeepConvNet(object):
 
 
 def find_overfit_parameters():
-    weight_scale = 2e-3   # Experiment with this!
+    weight_scale = 2e-3  # Experiment with this!
     learning_rate = 1e-5  # Experiment with this!
     ###########################################################
     # TODO: Change weight_scale and learning_rate so your     #
@@ -514,8 +534,9 @@ def create_convolutional_solver_instance(data_dict, dtype, device):
     return solver
 
 
-def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
-                        dtype=torch.float32):
+def kaiming_initializer(
+    Din, Dout, K=None, relu=True, device="cpu", dtype=torch.float32
+):
     """
     Implement Kaiming initialization for linear and convolution layers.
 
@@ -537,7 +558,7 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
       For a linear layer it should have shape (Din, Dout); for a
       convolution layer it should have shape (Dout, Din, K, K).
     """
-    gain = 2. if relu else 1.
+    gain = 2.0 if relu else 1.0
     weight = None
     if K is None:
         ###################################################################
@@ -571,7 +592,6 @@ def kaiming_initializer(Din, Dout, K=None, relu=True, device='cpu',
 
 
 class BatchNorm(object):
-
     @staticmethod
     def forward(x, gamma, beta, bn_param):
         """
@@ -614,22 +634,20 @@ class BatchNorm(object):
         - out: of shape (N, D)
         - cache: A tuple of values needed in the backward pass
         """
-        mode = bn_param['mode']
-        eps = bn_param.get('eps', 1e-5)
-        momentum = bn_param.get('momentum', 0.9)
+        mode = bn_param["mode"]
+        eps = bn_param.get("eps", 1e-5)
+        momentum = bn_param.get("momentum", 0.9)
 
         N, D = x.shape
-        running_mean = bn_param.get('running_mean',
-                                    torch.zeros(D,
-                                                dtype=x.dtype,
-                                                device=x.device))
-        running_var = bn_param.get('running_var',
-                                   torch.zeros(D,
-                                               dtype=x.dtype,
-                                               device=x.device))
+        running_mean = bn_param.get(
+            "running_mean", torch.zeros(D, dtype=x.dtype, device=x.device)
+        )
+        running_var = bn_param.get(
+            "running_var", torch.zeros(D, dtype=x.dtype, device=x.device)
+        )
 
         out, cache = None, None
-        if mode == 'train':
+        if mode == "train":
             ##################################################################
             # TODO: Implement the training-time forward pass for batch norm. #
             # Use minibatch statistics to compute the mean and variance, use #
@@ -656,7 +674,7 @@ class BatchNorm(object):
             ################################################################
             #                           END OF YOUR CODE                   #
             ################################################################
-        elif mode == 'test':
+        elif mode == "test":
             ################################################################
             # TODO: Implement the test-time forward pass for               #
             # batch normalization. Use the running mean and variance to    #
@@ -673,8 +691,8 @@ class BatchNorm(object):
             raise ValueError('Invalid forward batchnorm mode "%s"' % mode)
 
         # Store the updated running means back into bn_param
-        bn_param['running_mean'] = running_mean.detach()
-        bn_param['running_var'] = running_var.detach()
+        bn_param["running_mean"] = running_mean.detach()
+        bn_param["running_var"] = running_var.detach()
 
         return out, cache
 
@@ -749,7 +767,6 @@ class BatchNorm(object):
 
 
 class SpatialBatchNorm(object):
-
     @staticmethod
     def forward(x, gamma, beta, bn_param):
         """
@@ -826,18 +843,18 @@ class SpatialBatchNorm(object):
 
         return dx, dgamma, dbeta
 
+
 ##################################################################
 #           Fast Implementations and Sandwich Layers             #
 ##################################################################
 
 
 class FastConv(object):
-
     @staticmethod
     def forward(x, w, b, conv_param):
         N, C, H, W = x.shape
         F, _, HH, WW = w.shape
-        stride, pad = conv_param['stride'], conv_param['pad']
+        stride, pad = conv_param["stride"], conv_param["pad"]
         layer = torch.nn.Conv2d(C, F, (HH, WW), stride=stride, padding=pad)
         layer.weight = torch.nn.Parameter(w)
         layer.bias = torch.nn.Parameter(b)
@@ -857,22 +874,21 @@ class FastConv(object):
             db = layer.bias.grad.detach()
             layer.weight.grad = layer.bias.grad = None
         except RuntimeError:
-            dx, dw, db = torch.zeros_like(tx), \
-                         torch.zeros_like(layer.weight), \
-                         torch.zeros_like(layer.bias)
+            dx, dw, db = (
+                torch.zeros_like(tx),
+                torch.zeros_like(layer.weight),
+                torch.zeros_like(layer.bias),
+            )
         return dx, dw, db
 
 
 class FastMaxPool(object):
-
     @staticmethod
     def forward(x, pool_param):
         N, C, H, W = x.shape
-        pool_height, pool_width = \
-            pool_param['pool_height'], pool_param['pool_width']
-        stride = pool_param['stride']
-        layer = torch.nn.MaxPool2d(kernel_size=(pool_height, pool_width),
-                                   stride=stride)
+        pool_height, pool_width = pool_param["pool_height"], pool_param["pool_width"]
+        stride = pool_param["stride"]
+        layer = torch.nn.MaxPool2d(kernel_size=(pool_height, pool_width), stride=stride)
         tx = x.detach()
         tx.requires_grad = True
         out = layer(tx)
@@ -891,7 +907,6 @@ class FastMaxPool(object):
 
 
 class Conv_ReLU(object):
-
     @staticmethod
     def forward(x, w, b, conv_param):
         """
@@ -922,7 +937,6 @@ class Conv_ReLU(object):
 
 
 class Conv_ReLU_Pool(object):
-
     @staticmethod
     def forward(x, w, b, conv_param, pool_param):
         """
@@ -957,7 +971,6 @@ class Conv_ReLU_Pool(object):
 
 
 class Linear_BatchNorm_ReLU(object):
-
     @staticmethod
     def forward(x, w, b, gamma, beta, bn_param):
         """
@@ -995,12 +1008,10 @@ class Linear_BatchNorm_ReLU(object):
 
 
 class Conv_BatchNorm_ReLU(object):
-
     @staticmethod
     def forward(x, w, b, gamma, beta, conv_param, bn_param):
         a, conv_cache = FastConv.forward(x, w, b, conv_param)
-        an, bn_cache = SpatialBatchNorm.forward(a, gamma,
-                                                beta, bn_param)
+        an, bn_cache = SpatialBatchNorm.forward(a, gamma, beta, bn_param)
         out, relu_cache = ReLU.forward(an)
         cache = (conv_cache, bn_cache, relu_cache)
         return out, cache
@@ -1015,7 +1026,6 @@ class Conv_BatchNorm_ReLU(object):
 
 
 class Conv_BatchNorm_ReLU_Pool(object):
-
     @staticmethod
     def forward(x, w, b, gamma, beta, conv_param, bn_param, pool_param):
         a, conv_cache = FastConv.forward(x, w, b, conv_param)

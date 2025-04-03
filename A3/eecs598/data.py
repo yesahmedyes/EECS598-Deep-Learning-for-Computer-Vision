@@ -22,14 +22,12 @@ def _extract_tensors(dset, num=None, x_dtype=torch.float32):
     - x: `x_dtype` tensor of shape (N, 3, 32, 32)
     - y: int64 tensor of shape (N,)
     """
-    x = torch.tensor(dset.data,
-                     dtype=x_dtype).permute(0, 3, 1, 2).div_(255)
+    x = torch.tensor(dset.data, dtype=x_dtype).permute(0, 3, 1, 2).div_(255)
     y = torch.tensor(dset.targets, dtype=torch.int64)
     if num is not None:
         if num <= 0 or num > x.shape[0]:
             raise ValueError(
-                "Invalid value num=%d; must be in the range [0, %d]"
-                % (num, x.shape[0])
+                "Invalid value num=%d; must be in the range [0, %d]" % (num, x.shape[0])
             )
         x = x[:num].clone()
         y = y[:num].clone()
@@ -54,6 +52,10 @@ def cifar10(num_train=None, num_test=None, x_dtype=torch.float32):
     - x_test: `x_dtype` tensor of shape (num_test, 3, 32, 32)
     - y_test: int64 tensor of shape (num_test, 3, 32, 32)
     """
+    import ssl
+
+    ssl._create_default_https_context = ssl._create_unverified_context
+
     download = not os.path.isdir("cifar-10-batches-py")
     dset_train = CIFAR10(root=".", download=download, train=True)
     dset_test = CIFAR10(root=".", train=False)
@@ -170,8 +172,8 @@ def preprocess_cifar10(
 
     # return the dataset
     data_dict = {}
-    data_dict["X_val"] = X_train[num_training:num_training + num_validation]
-    data_dict["y_val"] = y_train[num_training:num_training + num_validation]
+    data_dict["X_val"] = X_train[num_training : num_training + num_validation]
+    data_dict["y_val"] = y_train[num_training : num_training + num_validation]
     data_dict["X_train"] = X_train[0:num_training]
     data_dict["y_train"] = y_train[0:num_training]
 
