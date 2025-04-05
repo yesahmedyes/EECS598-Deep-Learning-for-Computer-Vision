@@ -239,7 +239,6 @@ class TwoLayerNet(object):
         b2 = self.params["b2"]
 
         h1, cache1 = Linear_ReLU.forward(X, W1, b1)
-
         scores, cache2 = Linear.forward(h1, W2, b2)
 
         if y is None:

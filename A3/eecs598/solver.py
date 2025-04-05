@@ -221,10 +221,12 @@ class Solver(object):
         # Maybe subsample the data
         N = X.shape[0]
         if num_samples is not None and N > num_samples:
-            mask = torch.randperm(N, device=self.device)[:num_samples]
+            # Create mask on CPU first, then use it for indexing
+            mask = torch.randperm(N)[:num_samples]
             N = num_samples
             X = X[mask]
             y = y[mask]
+        # After indexing, now move to device
         X = X.to(self.device)
         y = y.to(self.device)
 
