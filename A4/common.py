@@ -4,6 +4,8 @@ and two-stage detector implementations. You have to implement some parts here -
 walk through the notebooks and you will find instructions on *when* to implement
 *what* in this module.
 """
+
+from turtle import update
 from typing import Dict, Tuple
 
 import torch
@@ -38,7 +40,7 @@ class DetectorBackboneWithFPN(nn.Module):
         self.out_channels = out_channels
 
         # Initialize with ImageNet pre-trained weights.
-        _cnn = models.regnet_x_400mf(pretrained=True)
+        _cnn = models.regnet_x_400mf(weights=models.RegNet_X_400MF_Weights.DEFAULT)
 
         # Torchvision models only return features from the last level. Detector
         # backbones (with FPN) require intermediate features of different scales.
@@ -62,32 +64,59 @@ class DetectorBackboneWithFPN(nn.Module):
         dummy_out_shapes = [(key, value.shape) for key, value in dummy_out.items()]
 
         print("For dummy input images with shape: (2, 3, 224, 224)")
+
         for level_name, feature_shape in dummy_out_shapes:
             print(f"Shape of {level_name} features: {feature_shape}")
 
-        ######################################################################
-        # TODO: Initialize additional Conv layers for FPN.                   #
-        #                                                                    #
-        # Create THREE "lateral" 1x1 conv layers to transform (c3, c4, c5)   #
-        # such that they all end up with the same `out_channels`.            #
-        # Then create THREE "output" 3x3 conv layers to transform the merged #
-        # FPN features to output (p3, p4, p5) features.                      #
-        # All conv layers must have stride=1 and padding such that features  #
-        # do not get downsampled due to 3x3 convs.                           #
-        #                                                                    #
-        # HINT: You have to use `dummy_out_shapes` defined above to decide   #
-        # the input/output channels of these layers.                         #
-        ######################################################################
-        # This behaves like a Python dict, but makes PyTorch understand that
-        # there are trainable weights inside it.
-        # Add THREE lateral 1x1 conv and THREE output 3x3 conv layers.
         self.fpn_params = nn.ModuleDict()
 
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                            END OF YOUR CODE                        #
-        ######################################################################
+        self.fpn_params["lateral_c3"] = nn.Conv2d(
+            dummy_out_shapes[0][1][1],
+            self.out_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+
+        self.fpn_params["lateral_c4"] = nn.Conv2d(
+            dummy_out_shapes[1][1][1],
+            self.out_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+
+        self.fpn_params["lateral_c5"] = nn.Conv2d(
+            dummy_out_shapes[2][1][1],
+            self.out_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+
+        self.fpn_params["output_c3"] = nn.Conv2d(
+            self.out_channels,
+            self.out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+        self.fpn_params["output_c4"] = nn.Conv2d(
+            self.out_channels,
+            self.out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+        self.fpn_params["output_c5"] = nn.Conv2d(
+            self.out_channels,
+            self.out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
 
     @property
     def fpn_strides(self):
@@ -99,22 +128,37 @@ class DetectorBackboneWithFPN(nn.Module):
         return {"p3": 8, "p4": 16, "p5": 32}
 
     def forward(self, images: torch.Tensor):
-
         # Multi-scale features, dictionary with keys: {"c3", "c4", "c5"}.
         backbone_feats = self.backbone(images)
 
         fpn_feats = {"p3": None, "p4": None, "p5": None}
-        ######################################################################
-        # TODO: Fill output FPN features (p3, p4, p5) using RegNet features  #
-        # (c3, c4, c5) and FPN conv layers created above.                    #
-        # HINT: Use `F.interpolate` to upsample FPN features.                #
-        ######################################################################
 
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                            END OF YOUR CODE                        #
-        ######################################################################
+        c3 = backbone_feats["c3"]
+        c4 = backbone_feats["c4"]
+        c5 = backbone_feats["c5"]
+
+        c3_conv = self.fpn_params["lateral_c3"](c3)
+        c4_conv = self.fpn_params["lateral_c4"](c4)
+        c5_conv = self.fpn_params["lateral_c5"](c5)
+
+        c4_conv_2x = F.interpolate(
+            c4_conv, scale_factor=2, mode="bilinear", align_corners=False
+        )
+
+        c5_conv_2x = F.interpolate(
+            c5_conv, scale_factor=2, mode="bilinear", align_corners=False
+        )
+        c5_conv_4x = F.interpolate(
+            c5_conv, scale_factor=4, mode="bilinear", align_corners=False
+        )
+
+        p3 = self.fpn_params["output_c3"](c3_conv + c4_conv_2x + c5_conv_4x)
+        p4 = self.fpn_params["output_c4"](c4_conv + c5_conv_2x)
+        p5 = self.fpn_params["output_c5"](c5_conv)
+
+        fpn_feats["p3"] = p3
+        fpn_feats["p4"] = p4
+        fpn_feats["p5"] = p5
 
         return fpn_feats
 
@@ -146,21 +190,25 @@ def get_fpn_location_coords(
     """
 
     # Set these to `(N, 2)` Tensors giving absolute location co-ordinates.
-    location_coords = {
-        level_name: None for level_name, _ in shape_per_fpn_level.items()
-    }
+    location_coords = {}
 
     for level_name, feat_shape in shape_per_fpn_level.items():
         level_stride = strides_per_fpn_level[level_name]
 
-        ######################################################################
-        # TODO: Implement logic to get location co-ordinates below.          #
-        ######################################################################
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                             END OF YOUR CODE                       #
-        ######################################################################
+        h, w = feat_shape[2], feat_shape[3]
+
+        x_coords = torch.arange(w)
+        y_coords = torch.arange(h)
+
+        grid_x, grid_y = torch.meshgrid(x_coords, y_coords, indexing="ij")
+
+        xc = (grid_x + 0.5) * level_stride
+        yc = (grid_y + 0.5) * level_stride
+
+        coords = torch.stack((xc, yc), dim=-1).view(-1, 2)
+
+        location_coords[level_name] = coords.to(device=device, dtype=dtype)
+
     return location_coords
 
 
@@ -183,24 +231,45 @@ def nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float = 0.5):
     if (not boxes.numel()) or (not scores.numel()):
         return torch.zeros(0, dtype=torch.long)
 
-    keep = None
-    #############################################################################
-    # TODO: Implement non-maximum suppression which iterates the following:     #
-    #       1. Select the highest-scoring box among the remaining ones,         #
-    #          which has not been chosen in this step before                    #
-    #       2. Eliminate boxes with IoU > threshold                             #
-    #       3. If any boxes remain, GOTO 1                                      #
-    #       Your implementation should not depend on a specific device type;    #
-    #       you can use the device of the input if necessary.                   #
-    # HINT: You can refer to the torchvision library code:                      #
-    # github.com/pytorch/vision/blob/main/torchvision/csrc/ops/cpu/nms_kernel.cpp
-    #############################################################################
-    # Replace "pass" statement with your code
-    pass
-    #############################################################################
-    #                              END OF YOUR CODE                             #
-    #############################################################################
-    return keep
+    keep = []
+
+    _, indices = torch.sort(scores, descending=True)
+
+    while indices.numel() > 0:
+        i = indices[0].item()
+        keep.append(i)
+
+        if indices.numel() == 1:
+            break
+
+        x1_A, y1_A, x2_A, y2_A = boxes[i]
+
+        remaining = indices[1:]
+        x1_B = boxes[remaining, 0]
+        y1_B = boxes[remaining, 1]
+        x2_B = boxes[remaining, 2]
+        y2_B = boxes[remaining, 3]
+
+        x_left = torch.max(x1_A, x1_B)
+        y_top = torch.max(y1_A, y1_B)
+        x_right = torch.min(x2_A, x2_B)
+        y_bottom = torch.min(y2_A, y2_B)
+
+        width = torch.clamp(x_right - x_left, min=0)
+        height = torch.clamp(y_bottom - y_top, min=0)
+
+        intersection = width * height
+
+        area_A = (x2_A - x1_A) * (y2_A - y1_A)
+        area_B = (x2_B - x1_B) * (y2_B - y1_B)
+
+        union = area_A + area_B - intersection
+
+        iou = intersection / union
+
+        indices = remaining[iou <= iou_threshold]
+
+    return torch.tensor(keep, dtype=torch.long, device=boxes.device)
 
 
 def class_spec_nms(
@@ -220,8 +289,13 @@ def class_spec_nms(
     """
     if boxes.numel() == 0:
         return torch.empty((0,), dtype=torch.int64, device=boxes.device)
+
     max_coordinate = boxes.max()
+
     offsets = class_ids.to(boxes) * (max_coordinate + torch.tensor(1).to(boxes))
+
     boxes_for_nms = boxes + offsets[:, None]
+
     keep = nms(boxes_for_nms, scores, iou_threshold)
+
     return keep

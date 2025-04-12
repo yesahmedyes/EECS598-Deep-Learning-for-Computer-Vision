@@ -28,9 +28,7 @@ class FCOSPredictionNetwork(nn.Module):
     We will use feature maps from FPN levels (P3, P4, P5) and exclude (P6, P7).
     """
 
-    def __init__(
-        self, num_classes: int, in_channels: int, stem_channels: List[int]
-    ):
+    def __init__(self, num_classes: int, in_channels: int, stem_channels: List[int]):
         """
         Args:
             num_classes: Number of object classes for classification.
@@ -42,56 +40,52 @@ class FCOSPredictionNetwork(nn.Module):
         """
         super().__init__()
 
-        ######################################################################
-        # TODO: Create a stem of alternating 3x3 convolution layers and RELU
-        # activation modules. Note there are two separate stems for class and
-        # box stem. The prediction layers for box regression and centerness
-        # operate on the output of `stem_box`.
-        # See FCOS figure again; both stems are identical.
-        #
-        # Use `in_channels` and `stem_channels` for creating these layers, the
-        # docstring above tells you what they mean. Initialize weights of each
-        # conv layer from a normal distribution with mean = 0 and std dev = 0.01
-        # and all biases with zero. Use conv stride = 1 and zero padding such
-        # that size of input features remains same: remember we need predictions
-        # at every location in feature map, we shouldn't "lose" any locations.
-        ######################################################################
-        # Fill these.
         stem_cls = []
         stem_box = []
-        # Replace "pass" statement with your code
-        pass
 
-        # Wrap the layers defined by student into a `nn.Sequential` module:
+        for i in range(len(stem_channels)):
+            conv_cls = nn.Conv2d(
+                in_channels, stem_channels[i], kernel_size=3, stride=1, padding=1
+            )
+
+            torch.nn.init.normal_(conv_cls.weight, mean=0, std=0.01)
+            torch.nn.init.constant_(conv_cls.bias, 0)
+
+            stem_cls.append(conv_cls)
+            stem_cls.append(nn.ReLU())
+
+            conv_box = nn.Conv2d(
+                in_channels, stem_channels[i], kernel_size=3, stride=1, padding=1
+            )
+
+            torch.nn.init.normal_(conv_box.weight, mean=0, std=0.01)
+            torch.nn.init.constant_(conv_box.bias, 0)
+
+            stem_box.append(conv_box)
+            stem_box.append(nn.ReLU())
+
         self.stem_cls = nn.Sequential(*stem_cls)
         self.stem_box = nn.Sequential(*stem_box)
 
-        ######################################################################
-        # TODO: Create THREE 3x3 conv layers for individually predicting three
-        # things at every location of feature map:
-        #     1. object class logits (`num_classes` outputs)
-        #     2. box regression deltas (4 outputs: LTRB deltas from locations)
-        #     3. centerness logits (1 output)
-        #
-        # Class probability and actual centerness are obtained by applying
-        # sigmoid activation to these logits. However, DO NOT initialize those
-        # modules here. This module should always output logits; PyTorch loss
-        # functions have numerically stable implementations with logits. During
-        # inference, logits are converted to probabilities by applying sigmoid,
-        # BUT OUTSIDE this module.
-        #
-        ######################################################################
+        self.pred_cls = nn.Conv2d(
+            stem_channels[-1], num_classes, kernel_size=3, stride=1, padding=1
+        )
 
-        # Replace these lines with your code, keep variable names unchanged.
-        self.pred_cls = None  # Class prediction conv
-        self.pred_box = None  # Box regression conv
-        self.pred_ctr = None  # Centerness conv
+        torch.nn.init.normal_(self.pred_cls.weight, mean=0, std=0.01)
 
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                           END OF YOUR CODE                         #
-        ######################################################################
+        self.pred_box = nn.Conv2d(
+            stem_channels[-1], 4, kernel_size=3, stride=1, padding=1
+        )
+
+        torch.nn.init.normal_(self.pred_box.weight, mean=0, std=0.01)
+        torch.nn.init.constant_(self.pred_box.bias, 0)
+
+        self.pred_ctr = nn.Conv2d(
+            stem_channels[-1], 1, kernel_size=3, stride=1, padding=1
+        )
+
+        torch.nn.init.normal_(self.pred_ctr.weight, mean=0, std=0.01)
+        torch.nn.init.constant_(self.pred_ctr.bias, 0)
 
         # OVERRIDE: Use a negative bias in `pred_cls` to improve training
         # stability. Without this, the training will most likely diverge.
@@ -117,28 +111,35 @@ class FCOSPredictionNetwork(nn.Module):
             3. Centerness logits:     `(batch_size, H * W, 1)`
         """
 
-        ######################################################################
-        # TODO: Iterate over every FPN feature map and obtain predictions using
-        # the layers defined above. Remember that prediction layers of box
-        # regression and centerness will operate on output of `stem_box`,
-        # and classification layer operates separately on `stem_cls`.
-        #
-        # CAUTION: The original FCOS model uses shared stem for centerness and
-        # classification. Recent follow-up papers commonly place centerness and
-        # box regression predictors with a shared stem, which we follow here.
-        #
-        # DO NOT apply sigmoid to classification and centerness logits.
-        ######################################################################
-        # Fill these with keys: {"p3", "p4", "p5"}, same as input dictionary.
         class_logits = {}
         boxreg_deltas = {}
         centerness_logits = {}
 
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                           END OF YOUR CODE                         #
-        ######################################################################
+        for each in ["p3", "p4", "p5"]:
+            features = feats_per_fpn_level[each]
+
+            stem_cls_out = self.stem_cls(features)
+            class_out = self.pred_cls(stem_cls_out)
+
+            stem_box_out = self.stem_box(features)
+            pred_box_out = self.pred_box(stem_box_out)
+            pred_ctr_out = self.pred_ctr(stem_box_out)
+
+            class_out = class_out.reshape(
+                class_out.shape[0], class_out.shape[1], -1
+            ).permute(0, 2, 1)
+
+            pred_box_out = pred_box_out.reshape(
+                pred_box_out.shape[0], pred_box_out.shape[1], -1
+            ).permute(0, 2, 1)
+
+            pred_ctr_out = pred_ctr_out.reshape(
+                pred_ctr_out.shape[0], pred_ctr_out.shape[1], -1
+            ).permute(0, 2, 1)
+
+            class_logits[each] = class_out
+            boxreg_deltas[each] = pred_box_out
+            centerness_logits[each] = pred_ctr_out
 
         return [class_logits, boxreg_deltas, centerness_logits]
 
@@ -185,7 +186,6 @@ def fcos_match_locations_to_gt(
 
     # Do this matching individually per FPN level.
     for level_name, centers in locations_per_fpn_level.items():
-
         # Get stride for this FPN level.
         stride = strides_per_fpn_level[level_name]
 
@@ -207,14 +207,10 @@ def fcos_match_locations_to_gt(
 
         lower_bound = stride * 4 if level_name != "p3" else 0
         upper_bound = stride * 8 if level_name != "p5" else float("inf")
-        match_matrix &= (pairwise_dist > lower_bound) & (
-            pairwise_dist < upper_bound
-        )
+        match_matrix &= (pairwise_dist > lower_bound) & (pairwise_dist < upper_bound)
 
         # Match the GT box with minimum area, if there are multiple GT matches.
-        gt_areas = (gt_boxes[:, 2] - gt_boxes[:, 0]) * (
-            gt_boxes[:, 3] - gt_boxes[:, 1]
-        )
+        gt_areas = (gt_boxes[:, 2] - gt_boxes[:, 0]) * (gt_boxes[:, 3] - gt_boxes[:, 1])
 
         # Get matches and their labels using match quality matrix.
         match_matrix = match_matrix.to(torch.float32)
@@ -262,18 +258,16 @@ def fcos_get_deltas_from_locations(
             Tensor of shape `(N, 4)` giving deltas from feature locations, that
             are normalized by feature stride.
     """
-    ##########################################################################
-    # TODO: Implement the logic to get deltas from feature locations.        #
-    ##########################################################################
-    # Set this to Tensor of shape (N, 4) giving deltas (left, top, right, bottom)
-    # from the locations to GT box edges, normalized by FPN stride.
-    deltas = None
 
-    # Replace "pass" statement with your code
-    pass
-    ##########################################################################
-    #                             END OF YOUR CODE                           #
-    ##########################################################################
+    gt_boxes = gt_boxes[:, :4]
+
+    locations = locations.repeat(1, 2)
+
+    deltas = (gt_boxes - locations) / stride
+
+    mask = gt_boxes[:, -1] != -1
+
+    deltas[~mask] = -1
 
     return deltas
 
@@ -285,14 +279,7 @@ def fcos_apply_deltas_to_locations(
     Implement the inverse of `fcos_get_deltas_from_locations` here:
 
     Given edge deltas (left, top, right, bottom) and feature locations of FPN, get
-    the resulting bounding box co-ordinates by applying deltas on locations. This
-    method is used for inference in FCOS: deltas are outputs from model, and
-    applying them to anchors will give us final box predictions.
-
-    Recall in above method, we were required to normalize the deltas by feature
-    stride. Similarly, we have to un-normalize the input deltas with feature
-    stride before applying them to locations, because the given input locations are
-    already absolute co-ordinates in image dimensions.
+    the resulting bounding box co-ordinates by applying deltas on locations.
 
     Args:
         deltas: Tensor of shape `(N, 4)` giving edge deltas to apply to locations.
@@ -300,24 +287,24 @@ def fcos_apply_deltas_to_locations(
         stride: Stride of the FPN feature map.
 
     Returns:
-        torch.Tensor
-            Same shape as deltas and locations, giving co-ordinates of the
-            resulting boxes `(x1, y1, x2, y2)`, absolute in image dimensions.
+        torch.Tensor: Shape `(N, 4)` giving co-ordinates of predicted boxes.
     """
-    ##########################################################################
-    # TODO: Implement the transformation logic to get boxes.                 #
-    #                                                                        #
-    # NOTE: The model predicted deltas MAY BE negative, which is not valid   #
-    # for our use-case because the feature center must lie INSIDE the final  #
-    # box. Make sure to clip them to zero.                                   #
-    ##########################################################################
-    # Replace "pass" statement with your code
-    pass
-    ##########################################################################
-    #                             END OF YOUR CODE                           #
-    ##########################################################################
 
-    return output_boxes
+    if locations.device != deltas.device:
+        locations = locations.to(deltas.device)
+
+    if deltas.shape[0] == 0:
+        return torch.zeros((0, 4), device=deltas.device, dtype=deltas.dtype)
+
+    locations = locations.repeat(1, 2)
+
+    boxes = locations + deltas * stride
+
+    mask = deltas == -1
+
+    boxes[mask] = locations[mask]
+
+    return boxes
 
 
 def fcos_make_centerness_targets(deltas: torch.Tensor):
@@ -337,15 +324,24 @@ def fcos_make_centerness_targets(deltas: torch.Tensor):
         torch.Tensor
             Tensor of shape `(N, )` giving centerness regression targets.
     """
-    ##########################################################################
-    # TODO: Implement the centerness calculation logic.                      #
-    ##########################################################################
-    centerness = None
-    # Replace "pass" statement with your code
-    pass
-    ##########################################################################
-    #                             END OF YOUR CODE                           #
-    ##########################################################################
+
+    L, T, R, B = (
+        torch.abs(deltas[:, 0]),
+        torch.abs(deltas[:, 1]),
+        torch.abs(deltas[:, 2]),
+        torch.abs(deltas[:, 3]),
+    )
+
+    eps = 1e-8
+
+    numerator = torch.min(L, R) * torch.min(T, B)
+    denominator = torch.max(L, R) * torch.max(T, B) + eps
+
+    centerness = torch.sqrt(torch.clamp(numerator / denominator, min=0.0, max=1.0))
+
+    mask = deltas[:, 0] == -1
+
+    centerness[mask] = -1
 
     return centerness
 
@@ -359,23 +355,13 @@ class FCOS(nn.Module):
     training and predicts boxes during inference.
     """
 
-    def __init__(
-        self, num_classes: int, fpn_channels: int, stem_channels: List[int]
-    ):
+    def __init__(self, num_classes: int, fpn_channels: int, stem_channels: List[int]):
         super().__init__()
+
         self.num_classes = num_classes
 
-        ######################################################################
-        # TODO: Initialize backbone and prediction network using arguments.  #
-        ######################################################################
-        # Feel free to delete these two lines: (but keep variable names same)
-        self.backbone = None
-        self.pred_net = None
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                           END OF YOUR CODE                         #
-        ######################################################################
+        self.backbone = DetectorBackboneWithFPN(fpn_channels)
+        self.pred_net = FCOSPredictionNetwork(num_classes, fpn_channels, stem_channels)
 
         # Averaging factor for training loss; EMA of foreground locations.
         # STUDENTS: See its use in `forward` when you implement losses.
@@ -407,63 +393,54 @@ class FCOS(nn.Module):
             Losses during training and predictions during inference.
         """
 
-        ######################################################################
-        # TODO: Process the image through backbone, FPN, and prediction head #
-        # to obtain model predictions at every FPN location.                 #
-        # Get dictionaries of keys {"p3", "p4", "p5"} giving predicted class #
-        # logits, deltas, and centerness.                                    #
-        ######################################################################
-        # Feel free to delete this line: (but keep variable names same)
-        pred_cls_logits, pred_boxreg_deltas, pred_ctr_logits = None, None, None
-        # Replace "pass" statement with your code
-        pass
+        fpn_feats = self.backbone(images)
+        pred_cls_logits, pred_boxreg_deltas, pred_ctr_logits = self.pred_net(fpn_feats)
 
-        ######################################################################
-        # TODO: Get absolute co-ordinates `(xc, yc)` for every location in
-        # FPN levels.
-        #
-        # HINT: You have already implemented everything, just have to
-        # call the functions properly.
-        ######################################################################
-        # Feel free to delete this line: (but keep variable names same)
-        locations_per_fpn_level = None
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                           END OF YOUR CODE                         #
-        ######################################################################
+        fpn_feats_shapes = {
+            level_name: feat.shape for level_name, feat in fpn_feats.items()
+        }
+
+        locations_per_fpn_level = get_fpn_location_coords(
+            fpn_feats_shapes, self.backbone.fpn_strides, device=images.device
+        )
 
         if not self.training:
-            # During inference, just go to this method and skip rest of the
-            # forward pass.
-            # fmt: off
             return self.inference(
-                images, locations_per_fpn_level,
-                pred_cls_logits, pred_boxreg_deltas, pred_ctr_logits,
+                images,
+                locations_per_fpn_level,
+                pred_cls_logits,
+                pred_boxreg_deltas,
+                pred_ctr_logits,
                 test_score_thresh=test_score_thresh,
                 test_nms_thresh=test_nms_thresh,
             )
-            # fmt: on
 
-        ######################################################################
-        # TODO: Assign ground-truth boxes to feature locations. We have this
-        # implemented in a `fcos_match_locations_to_gt`. This operation is NOT
-        # batched so call it separately per GT boxes in batch.
-        ######################################################################
-        # List of dictionaries with keys {"p3", "p4", "p5"} giving matched
-        # boxes for locations per FPN level, per image. Fill this list:
+        # fcos_match_locations_to_gt is not batched; call it for each image's GT boxes separately
+
         matched_gt_boxes = []
-        # Replace "pass" statement with your code
-        pass
+
+        for each in gt_boxes:
+            matched_gt_boxes.append(
+                fcos_match_locations_to_gt(
+                    locations_per_fpn_level, self.backbone.fpn_strides, each
+                )
+            )
 
         # Calculate GT deltas for these matched boxes. Similar structure
         # as `matched_gt_boxes` above. Fill this list:
         matched_gt_deltas = []
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                           END OF YOUR CODE                         #
-        ######################################################################
+
+        for gt_boxes in matched_gt_boxes:
+            _deltas = {}
+
+            for each in ["p3", "p4", "p5"]:
+                _deltas[each] = fcos_get_deltas_from_locations(
+                    locations_per_fpn_level[each],
+                    gt_boxes[each],
+                    self.backbone.fpn_strides[each],
+                )
+
+            matched_gt_deltas.append(_deltas)
 
         # Collate lists of dictionaries, to dictionaries of batched tensors.
         # These are dictionaries with keys {"p3", "p4", "p5"} and values as
@@ -481,24 +458,51 @@ class FCOS(nn.Module):
 
         # Perform EMA update of normalizer by number of positive locations.
         num_pos_locations = (matched_gt_boxes[:, :, 4] != -1).sum()
+
         pos_loc_per_image = num_pos_locations.item() / images.shape[0]
+
         self._normalizer = 0.9 * self._normalizer + 0.1 * pos_loc_per_image
 
-        #######################################################################
-        # TODO: Calculate losses per location for classification, box reg and
-        # centerness. Remember to set box/centerness losses for "background"
-        # positions to zero.
-        ######################################################################
-        # Feel free to delete this line: (but keep variable names same)
-        loss_cls, loss_box, loss_ctr = None, None, None
+        # Class Loss
 
-        # Replace "pass" statement with your code
-        pass
-        ######################################################################
-        #                            END OF YOUR CODE                        #
-        ######################################################################
-        # Sum all locations and average by the EMA of foreground locations.
-        # In training code, we simply add these three and call `.backward()`
+        class_indices = matched_gt_boxes[:, :, -1].long()
+
+        valid_mask = class_indices >= 0
+
+        temp_indices = class_indices.clone()
+        temp_indices[~valid_mask] = 0
+
+        gt_classes = F.one_hot(temp_indices, num_classes=self.num_classes).float()
+
+        gt_classes[~valid_mask] = 0
+
+        loss_cls = sigmoid_focal_loss(inputs=pred_cls_logits, targets=gt_classes)
+
+        # Bounding Box Loss
+
+        loss_box = 0.25 * F.l1_loss(
+            pred_boxreg_deltas, matched_gt_deltas, reduction="none"
+        )
+
+        loss_box[matched_gt_deltas < 0] *= 0.0
+
+        # Centerness Loss
+
+        gt_centerness = []
+
+        for each in matched_gt_deltas:
+            gt_centerness.append(fcos_make_centerness_targets(each))
+
+        gt_centerness = torch.stack(gt_centerness, dim=0).to(
+            device=matched_gt_deltas.device, dtype=matched_gt_deltas.dtype
+        )
+
+        loss_ctr = F.binary_cross_entropy_with_logits(
+            pred_ctr_logits, gt_centerness.unsqueeze(-1), reduction="none"
+        )
+
+        loss_ctr[gt_centerness < 0] *= 0.0
+
         return {
             "loss_cls": loss_cls.sum() / (self._normalizer * images.shape[0]),
             "loss_box": loss_box.sum() / (self._normalizer * images.shape[0]),
@@ -553,79 +557,73 @@ class FCOS(nn.Module):
         pred_scores_all_levels = []
 
         for level_name in locations_per_fpn_level.keys():
-
             # Get locations and predictions from a single level.
             # We index predictions by `[0]` to remove batch dimension.
             level_locations = locations_per_fpn_level[level_name]
+
             level_cls_logits = pred_cls_logits[level_name][0]
+
             level_deltas = pred_boxreg_deltas[level_name][0]
+
             level_ctr_logits = pred_ctr_logits[level_name][0]
 
-            ##################################################################
-            # TODO: FCOS uses the geometric mean of class probability and
-            # centerness as the final confidence score. This helps in getting
-            # rid of excessive amount of boxes far away from object centers.
-            # Compute this value here (recall sigmoid(logits) = probabilities)
-            #
-            # Then perform the following steps in order:
-            #   1. Get the most confidently predicted class and its score for
-            #      every box. Use level_pred_scores: (N, num_classes) => (N, )
-            #   2. Only retain prediction that have a confidence score higher
-            #      than provided threshold in arguments.
-            #   3. Obtain predicted boxes using predicted deltas and locations
-            #   4. Clip XYXY box-cordinates that go beyond thr height and
-            #      and width of input image.
-            ##################################################################
-            # Feel free to delete this line: (but keep variable names same)
-            level_pred_boxes, level_pred_classes, level_pred_scores = (
-                None,
-                None,
-                None,  # Need tensors of shape: (N, 4) (N, ) (N, )
-            )
+            level_cls_logits.sigmoid_()
+            level_ctr_logits.sigmoid_()
 
             # Compute geometric mean of class logits and centerness:
-            level_pred_scores = torch.sqrt(
-                level_cls_logits.sigmoid_() * level_ctr_logits.sigmoid_()
+            level_pred_scores = torch.sqrt(level_cls_logits * level_ctr_logits)
+
+            level_pred_scores, level_pred_classes = torch.max(level_pred_scores, dim=1)
+
+            mask = level_pred_scores > test_score_thresh
+
+            level_pred_scores = level_pred_scores[mask]
+            level_pred_classes = level_pred_classes[mask]
+
+            level_locations = level_locations[mask]
+            level_deltas = level_deltas[mask]
+
+            level_pred_boxes = fcos_apply_deltas_to_locations(
+                level_deltas, level_locations, self.backbone.fpn_strides[level_name]
             )
-            # Step 1:
-            # Replace "pass" statement with your code
-            pass
 
-            # Step 2:
-            # Replace "pass" statement with your code
-            pass
+            height, width = images.shape[2:]
 
-            # Step 3:
-            # Replace "pass" statement with your code
-            pass
+            level_pred_boxes[:, 0] = torch.clamp(
+                level_pred_boxes[:, 0], min=0, max=width
+            )
 
-            # Step 4: Use `images` to get (height, width) for clipping.
-            # Replace "pass" statement with your code
-            pass
-            ##################################################################
-            #                          END OF YOUR CODE                      #
-            ##################################################################
+            level_pred_boxes[:, 1] = torch.clamp(
+                level_pred_boxes[:, 1], min=0, max=height
+            )
+
+            level_pred_boxes[:, 2] = torch.clamp(
+                level_pred_boxes[:, 2], min=0, max=width
+            )
+
+            level_pred_boxes[:, 3] = torch.clamp(
+                level_pred_boxes[:, 3], min=0, max=height
+            )
 
             pred_boxes_all_levels.append(level_pred_boxes)
             pred_classes_all_levels.append(level_pred_classes)
             pred_scores_all_levels.append(level_pred_scores)
 
-        ######################################################################
-        # Combine predictions from all levels and perform NMS.
         pred_boxes_all_levels = torch.cat(pred_boxes_all_levels)
         pred_classes_all_levels = torch.cat(pred_classes_all_levels)
         pred_scores_all_levels = torch.cat(pred_scores_all_levels)
 
-        # STUDENTS: This function depends on your implementation of NMS.
         keep = class_spec_nms(
             pred_boxes_all_levels,
             pred_scores_all_levels,
             pred_classes_all_levels,
             iou_threshold=test_nms_thresh,
         )
+
         pred_boxes_all_levels = pred_boxes_all_levels[keep]
         pred_classes_all_levels = pred_classes_all_levels[keep]
         pred_scores_all_levels = pred_scores_all_levels[keep]
+
         return (
             pred_boxes_all_levels,
             pred_classes_all_levels,

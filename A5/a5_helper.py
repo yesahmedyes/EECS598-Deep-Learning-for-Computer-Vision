@@ -18,7 +18,7 @@ def load_coco_captions(path: str = "./datasets/coco.pt"):
     "vocab" - caption vocabulary, including "idx_to_token" and "token_to_idx"
 
     Returns: a data dictionary
-  """
+    """
     data_dict = torch.load(path)
     # print out all the keys and values from the data dictionary
     for k, v in data_dict.items():
@@ -29,17 +29,15 @@ def load_coco_captions(path: str = "./datasets/coco.pt"):
 
     assert data_dict["train_images"].size(0) == data_dict["train_captions"].size(
         0
-    ) and data_dict["val_images"].size(0) == data_dict["val_captions"].size(
-        0
-    ), "shapes of data mismatch!"
+    ) and data_dict["val_images"].size(0) == data_dict["val_captions"].size(0), (
+        "shapes of data mismatch!"
+    )
 
     print("\nTrain images shape: ", data_dict["train_images"].shape)
     print("Train caption tokens shape: ", data_dict["train_captions"].shape)
     print("Validation images shape: ", data_dict["val_images"].shape)
     print("Validation caption tokens shape: ", data_dict["val_captions"].shape)
-    print(
-        "total number of caption tokens: ", len(data_dict["vocab"]["idx_to_token"])
-    )
+    print("total number of caption tokens: ", len(data_dict["vocab"]["idx_to_token"]))
     print(
         "mappings (list) from index to caption token: ",
         data_dict["vocab"]["idx_to_token"],
@@ -77,7 +75,7 @@ def train_captioner(
         filter(lambda p: p.requires_grad, model.parameters()), learning_rate
     )
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lambda epoch: lr_decay ** epoch
+        optimizer, lambda epoch: lr_decay**epoch
     )
 
     # sample minibatch data
@@ -133,15 +131,21 @@ def decode_captions(captions, idx_to_word):
     captions = captions[None] if singleton else captions
 
     decoded = []
+
     N, T = captions.shape
+
     for i in range(N):
         words = []
+
         for t in range(T):
             word = idx_to_word[captions[i, t]]
+
             if word != "<NULL>":
                 words.append(word)
+
             if word == "<END>":
                 break
+
         decoded.append(" ".join(words))
 
     if singleton:
@@ -202,7 +206,7 @@ def train(
         val_loss, val_acc = val(model, val_dataloader, loss_func, batch_size)
         loss_hist = avg_epoch_loss / (batch_size * 4)
         print(
-            f"[epoch: {epoch_num+1}]",
+            f"[epoch: {epoch_num + 1}]",
             "[loss: ",
             f"{loss_hist:.4f}",
             "]",

@@ -38,6 +38,11 @@ class VOC2007DetectionTiny(torch.utils.data.Dataset):
                 val, center crop will not be taken to capture all detections.
         """
         super().__init__()
+
+        import ssl
+
+        ssl._create_default_https_context = ssl._create_unverified_context
+
         self.image_size = image_size
 
         # Attempt to download the dataset from Justin's server:
@@ -54,12 +59,8 @@ class VOC2007DetectionTiny(torch.utils.data.Dataset):
         # fmt: on
 
         # Make a (class to ID) and inverse (ID to class) mapping.
-        self.class_to_idx = {
-            _class: _idx for _idx, _class in enumerate(voc_classes)
-        }
-        self.idx_to_class = {
-            _idx: _class for _idx, _class in enumerate(voc_classes)
-        }
+        self.class_to_idx = {_class: _idx for _idx, _class in enumerate(voc_classes)}
+        self.idx_to_class = {_idx: _class for _idx, _class in enumerate(voc_classes)}
 
         # Load instances from JSON file:
         self.instances = json.load(
@@ -73,9 +74,7 @@ class VOC2007DetectionTiny(torch.utils.data.Dataset):
             transforms.Resize(image_size),
             transforms.CenterCrop(image_size),
             transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-            ),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
         self.image_transform = transforms.Compose(_transforms)
 
@@ -105,9 +104,7 @@ class VOC2007DetectionTiny(torch.utils.data.Dataset):
         # Extract TAR file:
         import tarfile
 
-        voc_tar = tarfile.open(
-            os.path.join(dataset_dir, "VOCtrainval_06-Nov-2007.tar")
-        )
+        voc_tar = tarfile.open(os.path.join(dataset_dir, "VOCtrainval_06-Nov-2007.tar"))
         voc_tar.extractall(dataset_dir)
         voc_tar.close()
 
@@ -171,15 +168,11 @@ class VOC2007DetectionTiny(torch.utils.data.Dataset):
 
         # Center cropping may completely exclude certain boxes that were close
         # to image boundaries. Set them to -1
-        invalid = (gt_boxes[:, 0] > gt_boxes[:, 2]) | (
-            gt_boxes[:, 1] > gt_boxes[:, 3]
-        )
+        invalid = (gt_boxes[:, 0] > gt_boxes[:, 2]) | (gt_boxes[:, 1] > gt_boxes[:, 3])
         gt_boxes[invalid] = -1
 
         # Pad to max 40 boxes, that's enough for VOC.
-        gt_boxes = torch.cat(
-            [gt_boxes, torch.zeros(40 - len(gt_boxes), 5).fill_(-1.0)]
-        )
+        gt_boxes = torch.cat([gt_boxes, torch.zeros(40 - len(gt_boxes), 5).fill_(-1.0)])
         # Return image path because it is needed for evaluation.
         return image_path, image, gt_boxes
 
@@ -213,6 +206,7 @@ def train_detector(
         lr=learning_rate,
         weight_decay=weight_decay,
     )
+
     # LR scheduler: use step decay at 70% and 90% of training iters.
     lr_scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=[int(0.6 * max_iters), int(0.9 * max_iters)]
@@ -222,6 +216,7 @@ def train_detector(
     loss_history = []
 
     train_loader = infinite_loader(train_loader)
+
     detector.train()
 
     for _iter in range(max_iters):
@@ -229,6 +224,7 @@ def train_detector(
         _, images, gt_boxes = next(train_loader)
 
         images = images.to(device)
+
         gt_boxes = gt_boxes.to(device)
 
         # Dictionary of loss scalars.
@@ -238,18 +234,25 @@ def train_detector(
         losses = {k: v for k, v in losses.items() if "loss" in k}
 
         optimizer.zero_grad()
+
         total_loss = sum(losses.values())
         total_loss.backward()
+
+        # torch.nn.utils.clip_grad_norm_(detector.parameters(), max_norm=10.0)
+
         optimizer.step()
+
         lr_scheduler.step()
 
         # Print losses periodically.
         if _iter % log_period == 0:
             loss_str = f"[Iter {_iter}][loss: {total_loss:.3f}]"
+
             for key, value in losses.items():
                 loss_str += f"[{key}: {value:.3f}]"
 
             print(loss_str)
+
             loss_history.append(total_loss.item())
 
     # Plot training loss.
@@ -268,9 +271,8 @@ def inference_with_detector(
     nms_thresh: float,
     output_dir: Optional[str] = None,
     dtype: torch.dtype = torch.float32,
-    device:str = "cpu",
+    device: str = "cpu",
 ):
-
     # ship model to GPU
     detector.to(dtype=dtype, device=device)
 
@@ -284,20 +286,22 @@ def inference_with_detector(
             transforms.Normalize(
                 mean=[0.0, 0.0, 0.0], std=[1 / 0.229, 1 / 0.224, 1 / 0.225]
             ),
-            transforms.Normalize(
-                mean=[-0.485, -0.456, -0.406], std=[1.0, 1.0, 1.0]
-            ),
+            transforms.Normalize(mean=[-0.485, -0.456, -0.406], std=[1.0, 1.0, 1.0]),
         ]
     )
 
     if output_dir is not None:
         det_dir = "mAP/input/detection-results"
         gt_dir = "mAP/input/ground-truth"
+
         if os.path.exists(det_dir):
             shutil.rmtree(det_dir)
+
         os.mkdir(det_dir)
+
         if os.path.exists(gt_dir):
             shutil.rmtree(gt_dir)
+
         os.mkdir(gt_dir)
 
     for iter_num, test_batch in enumerate(test_loader):
@@ -341,9 +345,11 @@ def inference_with_detector(
         # write results to file for evaluation (use mAP API https://github.com/Cartucho/mAP for now...)
         if output_dir is not None:
             file_name = os.path.basename(image_path).replace(".jpg", ".txt")
-            with open(os.path.join(det_dir, file_name), "w") as f_det, open(
-                os.path.join(gt_dir, file_name), "w"
-            ) as f_gt:
+
+            with (
+                open(os.path.join(det_dir, file_name), "w") as f_det,
+                open(os.path.join(gt_dir, file_name), "w") as f_gt,
+            ):
                 for b in gt_boxes:
                     f_gt.write(
                         f"{idx_to_class[b[4].item()]} {b[0]:.2f} {b[1]:.2f} {b[2]:.2f} {b[3]:.2f}\n"
@@ -358,4 +364,4 @@ def inference_with_detector(
             )
 
     end_t = time.time()
-    print(f"Total inference time: {end_t-start_t:.1f}s")
+    print(f"Total inference time: {end_t - start_t:.1f}s")
