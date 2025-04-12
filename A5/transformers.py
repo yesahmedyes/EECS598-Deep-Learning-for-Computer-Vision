@@ -566,7 +566,7 @@ def get_subsequent_mask(seq):
 
     mask = mask.unsqueeze(0).repeat(seq.shape[0], 1, 1)
 
-    return mask
+    return mask.to(seq.device)
 
 
 class DecoderBlock(nn.Module):
@@ -631,32 +631,16 @@ class DecoderBlock(nn.Module):
         self.attention_self = MultiHeadAttention(
             num_heads, emb_dim, emb_dim // num_heads
         )
+
         self.attention_cross = MultiHeadAttention(
             num_heads, emb_dim, emb_dim // num_heads
         )
+
         self.feed_forward = FeedForwardBlock(emb_dim, feedforward_dim)
         self.norm1 = LayerNormalization(emb_dim)
         self.norm2 = LayerNormalization(emb_dim)
         self.norm3 = LayerNormalization(emb_dim)
         self.dropout = nn.Dropout(dropout)
-
-        self.linear = nn.Linear(feedforward_dim, emb_dim)
-        ##########################################################################
-        # TODO: Initialize the following layers:                                 #
-        # 1. Two MultiheadAttention layers with num_heads number of heads, emb_dim
-        #     as the embedding dimension. As done in Encoder, you should be able to
-        #     figure out the output dimension of both the MultiHeadAttention.    #
-        # 2. One FeedForward block that takes in emb_dim as input dimension and  #
-        #   feedforward_dim as hidden layers                                     #
-        # 3. LayerNormalization layers after each of the block                   #
-        # 4. Dropout after each of the block                                     #
-        ##########################################################################
-
-        # Replace "pass" statement with your code
-        pass
-        ##########################################################################
-        #               END OF YOUR CODE                                         #
-        ##########################################################################
 
     def forward(self, dec_inp: Tensor, enc_inp: Tensor, mask: Tensor = None) -> Tensor:
         """
@@ -670,26 +654,21 @@ class DecoderBlock(nn.Module):
         is the target sequence shifted by one in case of training and an initial
         token "BOS" during inference
         """
-        y = self.attention_self(dec_inp, dec_inp, dec_inp, mask)
-        y = self.norm1(y + dec_inp)
-        y = self.dropout(y)
-        y = self.attention_cross(y, enc_inp, enc_inp)
-        y = self.norm2(y + y)
+        self_attn_out = self.attention_self(dec_inp, dec_inp, dec_inp, mask)
+
+        x = self.norm1(dec_inp + self_attn_out)
+        x = self.dropout(x)
+
+        cross_attn_out = self.attention_cross(x, enc_inp, enc_inp)
+
+        y = self.norm2(x + cross_attn_out)
         y = self.dropout(y)
 
-        ##########################################################################
-        # TODO: Using the layers initialized in the init function, implement the #
-        # forward pass of the decoder block. Pass the dec_inp to the             #
-        # self.attention_self layer. This layer is responsible for the self      #
-        # interation of the decoder input. You should follow the Figure 1 in     #
-        # Attention is All you need paper to implenment the rest of the forward  #
-        # pass. Don't forget to apply the residual connections for different layers.
-        ##########################################################################
-        # Replace "pass" statement with your code
-        pass
-        ##########################################################################
-        #               END OF YOUR CODE                                         #
-        ##########################################################################
+        ff_out = self.feed_forward(y)
+
+        x = self.norm3(x + ff_out)
+        y = self.dropout(x)
+
         return y
 
 
@@ -818,20 +797,17 @@ def position_encoding_sinusoid(K: int, M: int) -> Tensor:
         y: a Tensor of shape (1, K, M)
 
     """
-    y = None
 
-    ##############################################################################
-    # TODO: Given the length of input sequence K and embedding dimension M       #
-    # construct a tesnor of shape (K, M) where the value along the dimensions    #
-    # follow the equations given in the notebook. Make sure to keep in mind the  #
-    # alternating sines and cosines along the embedding dimension M.             #
-    ##############################################################################
-    # Replace "pass" statement with your code
-    pass
-    ##############################################################################
-    #               END OF YOUR CODE                                             #
-    ##############################################################################
-    return y
+    y = torch.zeros(K, M)
+
+    a = 10000 ** torch.floor(torch.arange(0, M // 2) * 2 / M)
+
+    position = torch.arange(0, K).unsqueeze(1).float()
+
+    y[:, 0::2] = torch.sin(position / a)
+    y[:, 1::2] = torch.cos(position / a)
+
+    return y.unsqueeze(0)
 
 
 class Transformer(nn.Module):
@@ -869,21 +845,12 @@ class Transformer(nn.Module):
             num_dec_layers: int representing number of decoder blocks
 
         """
-        self.emb_layer = None
-        ##########################################################################
-        # TODO: Initialize an Embedding layer mapping vocab_len to emb_dim. This #
-        # is the very first input to our model and transform this input to       #
-        # emb_dim that will stay the same throughout our model. Please use the   #
-        # name of this layer as self.emb_layer                                   #
-        ##########################################################################
-        # Replace "pass" statement with your code
-        pass
-        ##########################################################################
-        #               END OF YOUR CODE                                         #
-        ##########################################################################
+        self.emb_layer = nn.Embedding(vocab_len, emb_dim)
+
         self.encoder = Encoder(
             num_heads, emb_dim, feedforward_dim, num_enc_layers, dropout
         )
+
         self.decoder = Decoder(
             num_heads,
             emb_dim,
@@ -914,28 +881,18 @@ class Transformer(nn.Module):
             dec_out: Tensor of shape (N*O, M) where O is the size of
                 the target sequence.
         """
-        q_emb = self.emb_layer(ques_b)
-        a_emb = self.emb_layer(ans_b)
-        q_emb_inp = q_emb + ques_pos
-        a_emb_inp = a_emb[:, :-1] + ans_pos[:, :-1]
-        dec_out = None
-        ##########################################################################
-        # TODO: This portion consists of writing the forward part for the complete
-        # Transformer. First, pass the q_emb_inp through the encoder, this will be
-        # the encoder output which you should use as one of the decoder inputs.
-        # Along with the encoder output, you should also construct an appropriate
-        # mask using the get_subsequent_mask. Finally, pass the a_emb_inp, the
-        # encoder output and the mask to the decoder. The task here is to mask
-        # the values of the target(a_emb_inp)
-        # Hint: the mask shape will depend on the Tensor ans_b
-        ##########################################################################
-        # Replace "pass" statement with your code
-        pass
-        ##########################################################################
-        #               END OF YOUR CODE                                         #
-        ##########################################################################
 
-        return dec_out
+        q_emb = self.emb_layer(ques_b)
+        q_emb_inp = q_emb + ques_pos
+
+        a_emb = self.emb_layer(ans_b)
+        a_emb_inp = a_emb[:, :-1] + ans_pos[:, :-1]
+
+        enc_out = self.encoder(q_emb_inp)
+
+        dec_out = self.decoder(a_emb_inp, enc_out, get_subsequent_mask(a_emb_inp))
+
+        return dec_out.reshape(-1, dec_out.shape[-1])
 
 
 class AddSubDataset(torch.utils.data.Dataset):
@@ -961,10 +918,15 @@ class AddSubDataset(torch.utils.data.Dataset):
         """
 
         self.input_seqs = input_seqs
+
         self.target_seqs = target_seqs
+
         self.convert_str_to_tokens = convert_str_to_tokens
+
         self.emb_dim = emb_dim
+
         self.special_tokens = special_tokens
+
         self.pos_encode = pos_encode
 
     def preprocess(self, inp):
@@ -990,10 +952,13 @@ class AddSubDataset(torch.utils.data.Dataset):
 
         inp = self.input_seqs[idx]
         out = self.target_seqs[idx]
+
         preprocess_inp = torch.tensor(self.preprocess(inp))
         preprocess_out = torch.tensor(self.preprocess(out))
+
         inp_pos = len(preprocess_inp)
         inp_pos_enc = self.pos_encode(inp_pos, self.emb_dim)
+
         out_pos = len(preprocess_out)
         out_pos_enc = self.pos_encode(out_pos, self.emb_dim)
 
@@ -1012,13 +977,19 @@ def LabelSmoothingLoss(pred, ground):
             is the target sequence
     """
     ground = ground.contiguous().view(-1)
+
     eps = 0.1
+
     n_class = pred.size(1)
+
     one_hot = torch.nn.functional.one_hot(ground).to(pred.dtype)
     one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+
     log_prb = F.log_softmax(pred, dim=1)
+
     loss = -(one_hot * log_prb).sum(dim=1)
     loss = loss.sum()
+
     return loss
 
 
@@ -1031,4 +1002,5 @@ def CrossEntropyLoss(pred, ground):
             is the target sequence
     """
     loss = F.cross_entropy(pred, ground, reduction="sum")
+
     return loss
